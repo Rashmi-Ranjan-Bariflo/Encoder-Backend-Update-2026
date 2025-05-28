@@ -92,22 +92,32 @@ def filter_gear_value(request):
 @csrf_exempt
 def download_gear_value(request):
     if request.method == 'GET':
-        current_time = now()
-        ten_minutes_ago = current_time - timedelta(minutes=10)
+        # Get all gear values ordered by datetime
+        all_data = gear_value.objects.all().order_by('-date', '-time')
 
-        queryset = gear_value.objects.all()
+        # Assume the latest timestamp is the last data before stop
+        if not all_data.exists():
+            return JsonResponse({'error': 'No gear value data found.'}, status=404)
 
+        # Get the most recent timestamp before machine stop
+        last_item = all_data.first()
+        stop_time = make_aware(datetime.combine(last_item.date, last_item.time))
+
+        # Define the time range: 10 minutes before the stop
+        start_time = stop_time - timedelta(minutes=10)
+
+        # Filter data within this 10-minute window
         filtered = []
-        for item in queryset:
-            item_datetime = datetime.combine(item.date, item.time)
-            item_datetime = make_aware(item_datetime)  # Fix timezone issue here
-            if ten_minutes_ago <= item_datetime <= current_time:
+        for item in all_data:
+            item_datetime = make_aware(datetime.combine(item.date, item.time))
+            if start_time <= item_datetime <= stop_time:
                 filtered.append((item.date, item.time, item.value))
 
         filtered.sort(key=lambda x: datetime.combine(x[0], x[1]))
 
+        # Create CSV response
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="gear_values.csv"'
+        response['Content-Disposition'] = 'attachment; filename="gear_values_before_stop.csv"'
 
         writer = csv.writer(response)
         writer.writerow(['Date', 'Time', 'Value'])

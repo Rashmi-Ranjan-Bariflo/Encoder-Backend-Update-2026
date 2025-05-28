@@ -22,5 +22,5 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('gear_value_view/', gear_value_view),
     path('filter_gear_value/',filter_gear_value),
-    path('download_gear_value/',download_gear_value)
+    path('download_gear_value/',download_gear_value),
 ]

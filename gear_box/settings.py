@@ -89,6 +89,18 @@ DATABASES = {
 }
 
 
+# DATABASES = {
+#     'default':{
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'encodertest',                           
+#         'USER': 'Vertoxlabs',
+#         'PASSWORD':'Vtx@2025',
+#         'HOST': 'bcpostgressqlserver.postgres.database.azure.com',
+#         'PORT': '5432',
+#     }
+# }
+
+
 
 # DATABASES = {
 #     'default': {
