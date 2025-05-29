@@ -11,43 +11,95 @@ from gearapp.models import gear_value
 
 
 
+
 @csrf_exempt
 def gear_value_view(request):
-    if request.method == 'POST':
-        try:
-            body = json.loads(request.body)
-            value_val = body.get('value', '')
+    if request.method != 'GET':
+        return JsonResponse({'error': 'Only GET method allowed'}, status=405)
 
-            # Return all entries
-            all_data = gear_value.objects.all().order_by('date', 'time')
-            result = [
-                {
-                    'date': data.date.isoformat(),
-                    'time': data.time.strftime('%H:%M:%S'),
-                    'value': data.value
-                }
-                for data in all_data
-            ]
-            return JsonResponse(result, safe=False, status=201)
+    try:
+        # Get the most recent entry
+        latest_entry = gear_value.objects.order_by('-date', '-time').first()
+        if not latest_entry:
+            return JsonResponse({'error': 'No gear_value data available.'}, status=404)
 
-        except json.JSONDecodeError:
-            return JsonResponse({'error': 'Invalid JSON format.'}, status=400)
-        except Exception as e:
-            return JsonResponse({'error': str(e)}, status=400)
+        # Combine date and time (handle null time)
+        entry_time = latest_entry.time or datetime.min.time()
+        latest_datetime = datetime.combine(latest_entry.date, entry_time)
 
-    elif request.method == 'GET':
-        all_data = gear_value.objects.all().order_by('date', 'time')
-        result = [
-            {
-                'date': data.date.isoformat(),
-                'time': data.time.strftime('%H:%M:%S'),
-                'value': data.value
-            }
-            for data in all_data
-        ]
-        return JsonResponse(result, safe=False)
+        # Current time without timezone awareness
+        current_datetime = now().replace(tzinfo=None)
 
-    return JsonResponse({'error': 'Only GET and POST allowed'}, status=405)
+        # Decide if machine is running (within last 2 minutes)
+        if (current_datetime - latest_datetime).total_seconds() <= 120:
+            start_time = current_datetime - timedelta(minutes=15)
+            end_time = current_datetime
+        else:
+            end_time = latest_datetime
+            start_time = end_time - timedelta(minutes=15)
+
+        # Fetch entries within the time window
+        filtered_data = []
+        all_entries = gear_value.objects.order_by('date', 'time')
+
+        for entry in all_entries:
+            e_time = entry.time or datetime.min.time()
+            entry_datetime = datetime.combine(entry.date, e_time)
+
+            if start_time <= entry_datetime <= end_time:
+                filtered_data.append({
+                    'date': entry.date.isoformat(),
+                    'time': e_time.strftime('%H:%M:%S'),
+                    'value': entry.value
+                })
+
+        return JsonResponse(filtered_data, safe=False)
+
+    except Exception as e:
+        # Print detailed error in console
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
+    
+    
+
+# @csrf_exempt
+# def gear_value_view(request):
+#     if request.method == 'POST':
+#         try:
+#             body = json.loads(request.body)
+#             value_val = body.get('value', '')
+
+#             # Return all entries
+#             all_data = gear_value.objects.all().order_by('date', 'time')
+#             result = [
+#                 {
+#                     'date': data.date.isoformat(),
+#                     'time': data.time.strftime('%H:%M:%S'),
+#                     'value': data.value
+#                 }
+#                 for data in all_data
+#             ]
+#             return JsonResponse(result, safe=False, status=201)
+
+#         except json.JSONDecodeError:
+#             return JsonResponse({'error': 'Invalid JSON format.'}, status=400)
+#         except Exception as e:
+#             return JsonResponse({'error': str(e)}, status=400)
+
+#     elif request.method == 'GET':
+#         all_data = gear_value.objects.all().order_by('date', 'time')
+#         result = [
+#             {
+#                 'date': data.date.isoformat(),
+#                 'time': data.time.strftime('%H:%M:%S'),
+#                 'value': data.value
+#             }
+#             for data in all_data
+#         ]
+#         return JsonResponse(result, safe=False)
+
+#     return JsonResponse({'error': 'Only GET and POST allowed'}, status=405)
 
 
 
