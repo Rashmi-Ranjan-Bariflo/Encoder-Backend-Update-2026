@@ -63,44 +63,6 @@ def gear_value_view(request):
     
     
 
-# @csrf_exempt
-# def gear_value_view(request):
-#     if request.method == 'POST':
-#         try:
-#             body = json.loads(request.body)
-#             value_val = body.get('value', '')
-
-#             # Return all entries
-#             all_data = gear_value.objects.all().order_by('date', 'time')
-#             result = [
-#                 {
-#                     'date': data.date.isoformat(),
-#                     'time': data.time.strftime('%H:%M:%S'),
-#                     'value': data.value
-#                 }
-#                 for data in all_data
-#             ]
-#             return JsonResponse(result, safe=False, status=201)
-
-#         except json.JSONDecodeError:
-#             return JsonResponse({'error': 'Invalid JSON format.'}, status=400)
-#         except Exception as e:
-#             return JsonResponse({'error': str(e)}, status=400)
-
-#     elif request.method == 'GET':
-#         all_data = gear_value.objects.all().order_by('date', 'time')
-#         result = [
-#             {
-#                 'date': data.date.isoformat(),
-#                 'time': data.time.strftime('%H:%M:%S'),
-#                 'value': data.value
-#             }
-#             for data in all_data
-#         ]
-#         return JsonResponse(result, safe=False)
-
-#     return JsonResponse({'error': 'Only GET and POST allowed'}, status=405)
-
 
 
 @csrf_exempt
