@@ -11,56 +11,65 @@ from gearapp.models import gear_value
 
 
 
-
 @csrf_exempt
 def gear_value_view(request):
     if request.method != 'GET':
         return JsonResponse({'error': 'Only GET method allowed'}, status=405)
 
     try:
-        # Get the most recent entry
         latest_entry = gear_value.objects.order_by('-date', '-time').first()
         if not latest_entry:
             return JsonResponse({'error': 'No gear_value data available.'}, status=404)
 
-        # Combine date and time (handle null time)
-        entry_time = latest_entry.time or datetime.min.time()
-        latest_datetime = datetime.combine(latest_entry.date, entry_time)
+        # Build latest datetime from date and time
+        latest_time = latest_entry.time or datetime.min.time()
+        last_data_time = datetime.combine(latest_entry.date, latest_time)
 
-        # Current time without timezone awareness
-        current_datetime = now().replace(tzinfo=None)
+        # Current system time (timezone-naive)
+        current_time = now().replace(tzinfo=None)
 
-        # Decide if machine is running (within last 2 minutes)
-        if (current_datetime - latest_datetime).total_seconds() <= 120:
-            start_time = current_datetime - timedelta(minutes=15)
-            end_time = current_datetime
+        # Determine if machine is running (data received within last 2 minutes)
+        time_difference = (current_time - last_data_time).total_seconds()
+        is_running = time_difference <= 120  # within 2 minutes
+
+        # If publish is running, fetch data from now - 15min to now
+        # If publish is stopped, fetch data from last_data_time - 15min to last_data_time
+        if is_running:
+            end_time = current_time
         else:
-            end_time = latest_datetime
-            start_time = end_time - timedelta(minutes=15)
+            end_time = last_data_time  # use last known data timestamp
 
-        # Fetch entries within the time window
-        filtered_data = []
-        all_entries = gear_value.objects.order_by('date', 'time')
+        start_time = end_time - timedelta(minutes=15)
 
-        for entry in all_entries:
-            e_time = entry.time or datetime.min.time()
-            entry_datetime = datetime.combine(entry.date, e_time)
+        # Fetch entries that fall in this time window
+        data_entries = gear_value.objects.filter(
+            date__gte=start_time.date(),
+            date__lte=end_time.date()
+        ).order_by('date', 'time')
+
+        result = []
+        for entry in data_entries:
+            entry_time = entry.time or datetime.min.time()
+            entry_datetime = datetime.combine(entry.date, entry_time)
 
             if start_time <= entry_datetime <= end_time:
-                filtered_data.append({
+                result.append({
                     'date': entry.date.isoformat(),
-                    'time': e_time.strftime('%H:%M:%S'),
+                    'time': entry_time.strftime('%H:%M:%S'),
                     'value': entry.value
                 })
 
-        return JsonResponse(filtered_data, safe=False)
+        return JsonResponse({
+            'status': 'running' if is_running else 'stopped',
+            'start_time': start_time.strftime('%Y-%m-%dT%H:%M:%S'),
+            'end_time': end_time.strftime('%Y-%m-%dT%H:%M:%S'),
+            'data': result
+        }, safe=False)
 
     except Exception as e:
-        # Print detailed error in console
         import traceback
         traceback.print_exc()
         return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
-    
     
 
 
