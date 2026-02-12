@@ -1,12 +1,22 @@
-import time
 import os
+import django
+
+# ================= SETUP DJANGO =================
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "gear_box.settings")
+django.setup()
+
+# ================= IMPORTS =================
+
+import time
 from datetime import datetime, date
 import paho.mqtt.client as mqtt
 from telegram import Bot
 from telegram.ext import Updater, CommandHandler
-from .models import gear_value
 import asyncio
 import threading
+
+from gearapp.models import gear_value
 
 # MQTT Configuration
 MQTT_BROKER = 'mqttbroker.bc-pl.com'
@@ -22,8 +32,8 @@ MQTT_USER = 'mqttuser'
 MQTT_PASSWORD = 'Bfl@2025'
 
 # Telegram Configuration
-#TELEGRAM_BOT_TOKEN = '7119219406:AAHsLe6kqLiQmJMeTPCnYR3rg15__lvr92k'
-#TELEGRAM_GROUPCHAT_IDS = [-1002559440335]
+TELEGRAM_BOT_TOKEN = '7119219406:AAHsLe6kqLiQmJMeTPCnYR3rg15__lvr92k'
+TELEGRAM_GROUPCHAT_IDS = [-1002559440335]
 
 # Globals
 last_message_time = datetime.now()

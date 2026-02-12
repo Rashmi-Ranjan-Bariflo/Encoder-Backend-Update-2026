@@ -10,7 +10,6 @@ from datetime import timedelta
 from gearapp.models import gear_value
 
 
-
 @csrf_exempt
 def gear_value_view(request):
     if request.method != 'GET':
