@@ -1,152 +1,297 @@
-import json
-import csv
-from django.http import JsonResponse, HttpResponse
+import csv,json,time
+from datetime import datetime,timedelta
+from django.http import JsonResponse,HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from .models import gear_value
-from django.http import JsonResponse
-from django.utils.timezone import now, make_aware
-from datetime import datetime
-from datetime import timedelta
-from gearapp.models import gear_value
+from django.utils import timezone
+from gearapp.models import GearValue,GearRatio
 
+INPUT_CHANNEL="Input_rpm"
+OUTPUT_CHANNELS=["Output1_rpm","Output2_rpm","Output3_rpm"]
+TIME_MATCH_WINDOW_MS=5000
+
+from django.db.models import F
+from django.db.models.functions import Abs
+from datetime import timedelta
+from django.utils import timezone
+
+
+# def calculate_and_store_ratio():
+
+#     window = timedelta(milliseconds=TIME_MATCH_WINDOW_MS)
+
+#     last_ratio = GearRatio.objects.order_by("-timestamp").first()
+
+#     if last_ratio:
+#         start_time = last_ratio.timestamp
+#     else:
+#         start_time = timezone.now() - timedelta(minutes=30)
+
+#     end_time = timezone.now()
+
+
+#     inputs = GearValue.objects.filter(
+#         channel=INPUT_CHANNEL,
+#         timestamp__gt=start_time,
+#         timestamp__lte=end_time,
+#         rpm__gt=0
+#     ).order_by("timestamp")
+
+
+#     for inp in inputs:
+
+#         start = inp.timestamp - window
+#         end = inp.timestamp + window
+
+#         outputs = {}
+
+
+#         for ch in OUTPUT_CHANNELS:
+
+#             outputs[ch] = (
+#                 GearValue.objects.filter(
+#                     channel=ch,
+#                     timestamp__range=(start, end),
+#                     rpm__gt=0
+#                 )
+#                 # Find nearest timestamp
+#                 .annotate(
+#                     diff=Abs(F("timestamp") - inp.timestamp)
+#                 )
+#                 .order_by("diff")
+#                 .first()
+#             )
+
+
+#         # Skip if any output missing
+#         if not all(outputs.values()):
+#             continue
+
+
+#         # Calculate ratios
+#         r1 = round(outputs["Output1_rpm"].rpm / inp.rpm, 4)
+#         r2 = round(outputs["Output2_rpm"].rpm / inp.rpm, 4)
+#         r3 = round(outputs["Output3_rpm"].rpm / inp.rpm, 4)
+
+
+#         # Save matched ratio
+#         GearRatio.objects.create(
+#             timestamp=inp.timestamp,
+
+#             input_rpm=inp.rpm,
+
+#             output1_rpm=outputs["Output1_rpm"].rpm,
+#             output2_rpm=outputs["Output2_rpm"].rpm,
+#             output3_rpm=outputs["Output3_rpm"].rpm,
+
+#             ratio1=r1,
+#             ratio2=r2,
+#             ratio3=r3
+#         )
+
+
+#         print(
+#             f"✅ Ratio Saved | "
+#             f"TS: {inp.timestamp} | "
+#             f"In: {inp.rpm} | "
+#             f"Out: {[o.rpm for o in outputs.values()]}"
+# )
 
 @csrf_exempt
-def gear_value_view(request):
-    if request.method != 'GET':
-        return JsonResponse({'error': 'Only GET method allowed'}, status=405)
+def gear_dashboard_view(request):
+    if request.method!="GET":
+        return JsonResponse({"error":"Only GET allowed"},status=405)
 
     try:
-        latest_entry = gear_value.objects.order_by('-date', '-time').first()
-        if not latest_entry:
-            return JsonResponse({'error': 'No gear_value data available.'}, status=404)
+        now=timezone.now()
+        start_time=now-timedelta(minutes=15)
 
-        # Build latest datetime from date and time
-        latest_time = latest_entry.time or datetime.min.time()
-        last_data_time = datetime.combine(latest_entry.date, latest_time)
+        rpm_data=GearValue.objects.filter(
+            timestamp__range=(start_time,now)
+        ).order_by("timestamp")
 
-        # Current system time (timezone-naive)
-        current_time = now().replace(tzinfo=None)
+        ratio_data=GearRatio.objects.filter(
+            timestamp__range=(start_time,now)
+        ).order_by("timestamp")
 
-        # Determine if machine is running (data received within last 2 minutes)
-        time_difference = (current_time - last_data_time).total_seconds()
-        is_running = time_difference <= 120  # within 2 minutes
+        rpm_result=[
+            {
+                "timestamp":r.timestamp.isoformat(),
+                "channel":r.channel,
+                "rpm":r.rpm
+            } for r in rpm_data
+        ]
 
-        # If publish is running, fetch data from now - 15min to now
-        # If publish is stopped, fetch data from last_data_time - 15min to last_data_time
-        if is_running:
-            end_time = current_time
-        else:
-            end_time = last_data_time  # use last known data timestamp
-
-        start_time = end_time - timedelta(minutes=15)
-
-        # Fetch entries that fall in this time window
-        data_entries = gear_value.objects.filter(
-            date__gte=start_time.date(),
-            date__lte=end_time.date()
-        ).order_by('date', 'time')
-
-        result = []
-        for entry in data_entries:
-            entry_time = entry.time or datetime.min.time()
-            entry_datetime = datetime.combine(entry.date, entry_time)
-
-            if start_time <= entry_datetime <= end_time:
-                result.append({
-                    'date': entry.date.isoformat(),
-                    'time': entry_time.strftime('%H:%M:%S'),
-                    'value': entry.value
-                })
+        ratio_result=[
+            {
+                "timestamp":r.timestamp.isoformat(),
+                "input_rpm":r.input_rpm,
+                "output1_rpm":r.output1_rpm,
+                "output2_rpm":r.output2_rpm,
+                "output3_rpm":r.output3_rpm,
+                "ratio1":r.ratio1,
+                "ratio2":r.ratio2,
+                "ratio3":r.ratio3
+            } for r in ratio_data
+        ]
 
         return JsonResponse({
-            'status': 'running' if is_running else 'stopped',
-            'start_time': start_time.strftime('%Y-%m-%dT%H:%M:%S'),
-            'end_time': end_time.strftime('%Y-%m-%dT%H:%M:%S'),
-            'data': result
-        }, safe=False)
+            "status":"running",
+            "start_time":start_time.isoformat(),
+            "end_time":now.isoformat(),
+            "rpm_data":rpm_result,
+            "ratio_data":ratio_result
+        })
 
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
-    
-
-
+        return JsonResponse({"error":str(e)},status=500)
 
 @csrf_exempt
 def filter_gear_value(request):
-    if request.method == 'GET':
-        from_date_str = request.GET.get('from_date')
-        to_date_str = request.GET.get('to_date')
-        print(from_date_str,to_date_str)
+    if request.method!="GET":
+        return JsonResponse({"error":"Only GET allowed"},status=405)
 
+    from_date=request.GET.get("from_date")
+    to_date=request.GET.get("to_date")
 
-        if not from_date_str or not to_date_str:
-            return JsonResponse({'error': 'Both "from_date" and "to_date" are required.'}, status=400)
+    if not from_date or not to_date:
+        return JsonResponse({"error":"from_date and to_date required"},status=400)
 
-        try:
-            start = datetime.strptime(from_date_str, '%Y-%m-%d').date()
-            print("111111111")
-            end = datetime.strptime(to_date_str, '%Y-%m-%d').date()
-            print("2222222")
-        except ValueError:
-            return JsonResponse({'error': 'Invalid date format. Use yyyy-MM-dd.'}, status=400)
+    try:
+        start=timezone.make_aware(datetime.strptime(from_date,"%Y-%m-%d"))
+        end=timezone.make_aware(datetime.strptime(to_date,"%Y-%m-%d")+timedelta(days=1))
+    except:
+        return JsonResponse({"error":"Use YYYY-MM-DD format"},status=400)
 
-        values = gear_value.objects.filter(date__gte=start, date__lte=end).order_by('date', 'time')
+    data=GearValue.objects.filter(
+        timestamp__range=(start,end)
+    ).order_by("timestamp")
 
-        if not values.exists():
-            return JsonResponse({'error': 'No data found for the selected date range.'}, status=404)
+    if not data.exists():
+        return JsonResponse({"error":"No data found"},status=404)
 
-        result = [
-            {
-                'date': item.date.isoformat(),
-                'time': item.time.strftime('%H:%M:%S'),
-                'value': item.value 
-            }
-            for item in values
-        ]
+    result=[
+        {
+            "timestamp":r.timestamp.isoformat(),
+            "channel":r.channel,
+            "rpm":r.rpm
+        } for r in data
+    ]
 
-        return JsonResponse(result, safe=False)
+    return JsonResponse(result,safe=False)
 
-    return JsonResponse({'error': 'Only GET allowed'}, status=405)
+@csrf_exempt
+def filter_gear_ratio(request):
+    if request.method!="GET":
+        return JsonResponse({"error":"Only GET allowed"},status=405)
 
+    from_date=request.GET.get("from_date")
+    to_date=request.GET.get("to_date")
+
+    if not from_date or not to_date:
+        return JsonResponse({"error":"from_date and to_date required"},status=400)
+
+    try:
+        start=timezone.make_aware(datetime.strptime(from_date,"%Y-%m-%d"))
+        end=timezone.make_aware(datetime.strptime(to_date,"%Y-%m-%d")+timedelta(days=1))
+    except:
+        return JsonResponse({"error":"Use YYYY-MM-DD format"},status=400)
+
+    data=GearRatio.objects.filter(
+        timestamp__range=(start,end)
+    ).order_by("timestamp")
+
+    if not data.exists():
+        return JsonResponse({"error":"No ratio data found"},status=404)
+
+    result=[
+        {
+            "timestamp":r.timestamp.isoformat(),
+            "input_rpm":r.input_rpm,
+            "output1_rpm":r.output1_rpm,
+            "output2_rpm":r.output2_rpm,
+            "output3_rpm":r.output3_rpm,
+            "ratio1":r.ratio1,
+            "ratio2":r.ratio2,
+            "ratio3":r.ratio3
+        } for r in data
+    ]
+
+    return JsonResponse(result,safe=False)
 
 @csrf_exempt
 def download_gear_value(request):
-    if request.method == 'GET':
-        # Get all gear values ordered by datetime
-        all_data = gear_value.objects.all().order_by('-date', '-time')
+    if request.method!="GET":
+        return JsonResponse({"error":"Only GET allowed"},status=405)
 
-        #latest time when the last data before stop
-        if not all_data.exists():
-            return JsonResponse({'error': 'No gear value data found.'}, status=404)
+    data=GearValue.objects.all().order_by("-timestamp")
 
-        # Get the most recent timestamp before machine stop
-        last_item = all_data.first()
-        stop_time = make_aware(datetime.combine(last_item.date, last_item.time))
+    if not data.exists():
+        return JsonResponse({"error":"No data found"},status=404)
 
-        # Define the time range: 10 minutes before the machain stop
-        start_time = stop_time - timedelta(minutes=10)
+    last_time=data.first().timestamp
+    start_time=last_time-timedelta(minutes=10)
 
-        # Filter data within this 10m 
-        filtered = []
-        for item in all_data:
-            item_datetime = make_aware(datetime.combine(item.date, item.time))
-            if start_time <= item_datetime <= stop_time:
-                filtered.append((item.date, item.time, item.value))
+    rows=data.filter(
+        timestamp__range=(start_time,last_time)
+    ).order_by("timestamp")
 
-        filtered.sort(key=lambda x: datetime.combine(x[0], x[1]))
+    response=HttpResponse(content_type="text/csv")
+    response["Content-Disposition"]='attachment; filename="gear_rpm_data.csv"'
 
-        # Create CSV response
-        response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="gear_values_before_stop.csv"'
+    writer=csv.writer(response)
+    writer.writerow(["Timestamp","Channel","RPM"])
 
-        writer = csv.writer(response)
-        writer.writerow(['Date', 'Time', 'Value'])
+    for r in rows:
+        writer.writerow([
+            r.timestamp.isoformat(),
+            r.channel,
+            r.rpm
+        ])
 
-        for date, time, value in filtered:
-            writer.writerow([date.isoformat(), time.strftime('%H:%M:%S'), value])
+    return response
 
-        return response
+@csrf_exempt
+def download_gear_ratio(request):
+    if request.method!="GET":
+        return JsonResponse({"error":"Only GET allowed"},status=405)
 
-    return JsonResponse({'error': 'Only GET allowed'}, status=405)
+    data=GearRatio.objects.all().order_by("-timestamp")
+
+    if not data.exists():
+        return JsonResponse({"error":"No ratio data found"},status=404)
+
+    last_time=data.first().timestamp
+    start_time=last_time-timedelta(minutes=10)
+
+    rows=data.filter(
+        timestamp__range=(start_time,last_time)
+    ).order_by("timestamp")
+
+    response=HttpResponse(content_type="text/csv")
+    response["Content-Disposition"]='attachment; filename="gear_ratio_data.csv"'
+
+    writer=csv.writer(response)
+    writer.writerow([
+        "Timestamp",
+        "Input RPM",
+        "Output1 RPM",
+        "Output2 RPM",
+        "Output3 RPM",
+        "Ratio1",
+        "Ratio2",
+        "Ratio3"
+    ])
+
+    for r in rows:
+        writer.writerow([
+            r.timestamp.isoformat(),
+            r.input_rpm,
+            r.output1_rpm,
+            r.output2_rpm,
+            r.output3_rpm,
+            r.ratio1,
+            r.ratio2,
+            r.ratio3
+        ])
+
+    return response
