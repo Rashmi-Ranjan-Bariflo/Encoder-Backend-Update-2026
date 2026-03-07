@@ -1,4 +1,4 @@
-#!/home/kanhucharan/Desktop/project/gear_box/venv/bin/python3
+#!/home/pradip/Desktop/Encoder-Backend-Update-2026/venv/bin/python3.10
 # -*- coding: utf-8 -*-
 import re
 import sys

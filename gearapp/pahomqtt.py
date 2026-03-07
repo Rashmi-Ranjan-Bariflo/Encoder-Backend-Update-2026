@@ -48,7 +48,7 @@ NO_DATA_THRESHOLD = 10
 TELEGRAM_COOLDOWN = 60
 
 # Buffer timeout (seconds)
-BUFFER_TIMEOUT = 5
+BUFFER_TIMEOUT = 10
 
 
 # ================== Topic Mapping ==================
@@ -230,9 +230,12 @@ def on_message(client, userdata, msg):
 
         now = time.time()
 
-        if ts not in data_buffer:
+        # group messages by second
+        bucket = ts // 1000
 
-            data_buffer[ts] = {
+        if bucket not in data_buffer:
+
+            data_buffer[bucket] = {
                 "input": None,
                 "out1": None,
                 "out2": None,
@@ -241,10 +244,10 @@ def on_message(client, userdata, msg):
                 "time": device_dt
             }
 
-            buffer_time[ts] = now
+            buffer_time[bucket] = now
 
 
-        row = data_buffer[ts]
+        row = data_buffer[bucket]
 
 
         # Store values
@@ -277,8 +280,8 @@ def on_message(client, userdata, msg):
             calculate_ratio_from_row(row)
 
             # cleanup
-            del data_buffer[ts]
-            del buffer_time[ts]
+            del data_buffer[bucket]
+            del buffer_time[bucket]
 
 
         # ================= CLEAN OLD =================
@@ -384,14 +387,48 @@ def get_chat_id(update, context):
 
     print("Chat ID:", cid)
 
+# ================== DB CLEANUP ==================
+
+from datetime import timedelta
+
+from datetime import timedelta
+
+def cleanup_old_rows():
+
+    while True:
+        try:
+            cutoff = timezone.now() - timedelta(hours=1)
+
+            # Delete old GearValue rows
+            deleted_values, _ = GearValue.objects.filter(
+                timestamp__lt=cutoff
+            ).delete()
+
+            # Delete old GearRatio rows
+            deleted_ratios, _ = GearRatio.objects.filter(
+                timestamp__lt=cutoff
+            ).delete()
+
+            print(f"🧹 Deleted {deleted_values} GearValue rows older than 1 hour")
+            print(f"🧹 Deleted {deleted_ratios} GearRatio rows older than 1 hour")
+
+        except Exception as e:
+            print("❌ Cleanup error:", e)
+
+        # Run every 5 minutes
+        time.sleep(300)
 
 # ================== Main ==================
 
 def main():
 
+    # MQTT thread
     t1 = threading.Thread(target=mqtt_thread, daemon=True)
     t1.start()
 
+    # DB cleanup thread
+    t2 = threading.Thread(target=cleanup_old_rows, daemon=True)
+    t2.start()
 
     updater = Updater(TELEGRAM_BOT_TOKEN, use_context=True)
 

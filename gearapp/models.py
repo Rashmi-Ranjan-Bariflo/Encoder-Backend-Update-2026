@@ -5,12 +5,21 @@ from django.utils import timezone
 # Main RPM Data Table
 # ===============================
 class GearValue(models.Model):
-    timestamp = models.DateTimeField(default=timezone.now, db_index=True)
-    channel = models.CharField(max_length=50, db_index=True)
+    id = models.BigAutoField(primary_key=True)
+    timestamp = models.DateTimeField(default=timezone.now)
+    channel = models.CharField(max_length=50)
     rpm = models.FloatField()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["timestamp", "channel"]),
+            models.Index(fields=["-timestamp"]),
+        ]
+        ordering = ["-timestamp"]
 
     def __str__(self):
         return f"{self.channel} | {self.rpm} RPM @ {self.timestamp}"
+
 
 # ===============================
 # Hourly Statistics
